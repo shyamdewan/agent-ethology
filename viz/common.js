@@ -47,6 +47,14 @@ function renderTabs() {
   nav.innerHTML = `<div class="tabs-in"><a class="brand" href="histomap.html" style="color:inherit;text-decoration:none">Agent <span>Ethology</span></a>${TABS.map(([href, label], i) =>
     `<a class="tab" href="${href}"${href === here ? ' aria-current="page"' : ""}><b>${String(i + 1).padStart(2, "0")}</b>${label}</a>`).join("")}</div>`;
   document.body.prepend(nav);
+  // keep the tab strip where the reader left it across page loads, and never hide the current tab
+  const strip = nav.querySelector(".tabs-in");
+  try { strip.scrollLeft = +sessionStorage.getItem("tabs-x") || 0; } catch (e) {}
+  const cur = strip.querySelector('[aria-current="page"]');
+  if (cur && (cur.offsetLeft < strip.scrollLeft || cur.offsetLeft + cur.offsetWidth > strip.scrollLeft + strip.clientWidth)) strip.scrollLeft = cur.offsetLeft - 24;
+  const save = () => { try { sessionStorage.setItem("tabs-x", strip.scrollLeft); } catch (e) {} };
+  strip.addEventListener("scroll", save, { passive: true });
+  addEventListener("pagehide", save);
 }
 
 const tipEl = () => document.getElementById("tip") || Object.assign(document.body.appendChild(document.createElement("div")), { id: "tip", className: "tip" });
