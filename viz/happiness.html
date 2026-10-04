@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Power vs Happiness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="app.css?v=1791151604">
+<link rel="stylesheet" href="neu.css?v=1791151604">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="data/dynamics.js?v=1791151604"></script>
+<script src="data/weekly.js?v=1791151604"></script>
+<script src="data/logos.js?v=1791151604"></script>
+<script src="common.js?v=1791151604"></script>
+<style>
+.slope { stroke-width: 2; fill: none; cursor: pointer; transition: opacity 0.15s; }
+.end { stroke: var(--night); stroke-width: 2; }
+.focus .slope, .focus .end, .focus .nm { opacity: 0.12; }
+.focus .on { opacity: 1 !important; }
+.focus .slope.on { stroke-width: 3.5; }
+.nm { font: 500 12px var(--sans); fill: var(--bone); cursor: pointer; }
+.colhead { font: 600 13px var(--sans); fill: var(--bone); }
+.colsub { font: 11px var(--mono); fill: var(--ash); }
+.mini .dot { stroke: var(--night); stroke-width: 1.5; }
+.mini text { font: 10.5px var(--mono); fill: var(--ash); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pair h3 { font: 500 11px var(--mono); color: var(--ash); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div><p class="eyebrow">Dynamic 05 · Power and mood</p><h1>Does being in charge feel good?</h1></div>
+    <p class="dek">Each line is one model: its mood when <b>following</b> (left) and when <b>leading</b> (right). A rising line means it's happier in charge.</p>
+  </header>
+  <section class="findings" id="findings"></section>
+  <div class="split">
+    <div class="chart" id="chart"></div>
+    <aside class="side">
+      <h2>The paradox · across models</h2>
+      <div id="mini"></div>
+      <p class="hint" id="paradox" style="margin:8px 0 22px"></p>
+      <div id="detail"><p class="hint">Hover a line to isolate it. Click to read that model following and leading.</p></div>
+    </aside>
+  </div>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+let HP = [], R = null;
+const MIN = 20;
+function compute(range) {
+  const acc = {};
+  WK.happy.forEach(([s, w, n, sd, sm, fn, fs, fq, ln, ls, lq]) => {
+    if (!range.hasIdx(w)) return;
+    const o = (acc[s] ||= [0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    o[0] += n; o[1] += sd; o[2] += sm; o[3] += fn; o[4] += fs; o[5] += fq; o[6] += ln; o[7] += ls; o[8] += lq;
+  });
+  const side = (n, s, q) => { const m = s / n; return { n, mood: m, se: Math.sqrt(Math.max(0, (q - n * m * m) / Math.max(1, n - 1)) / n) }; };
+  HP = Object.entries(acc).filter(([s, o]) => o[3] >= MIN && o[6] >= MIN).map(([s, o]) => {
+    const ex = WK.happy_ex[s] || { follow: [], lead: [] };
+    const pick = arr => { const inR = arr.filter(e => range.hasIdx(e.w)); return (inR.length ? inR : arr).slice(0, 2); };
+    return { name: WK.names[s], n: o[0], dom: o[1] / o[0], mood: o[2] / o[0],
+      follow: { ...side(o[3], o[4], o[5]), ex: pick(ex.follow) }, lead: { ...side(o[6], o[7], o[8]), ex: pick(ex.lead) } };
+  }).sort((a, b) => (a.lead.mood - a.follow.mood) - (b.lead.mood - b.follow.mood));
+}
+const UP = "#e0573f", DOWN = "#b5d1cc";
+const delta = m => m.lead.mood - m.follow.mood;
+
+function findings() {
+  if (HP.length < 2) { document.getElementById("findings").innerHTML = `<div class="finding"><b>Too few models</b><p>Pick a longer time frame.</p></div>`; return; }
+  const ups = HP.filter(m => delta(m) > 0).length;
+  const pool = HP.filter(m => !APPOINTED(m.name)), big = d3.greatest(pool, delta), low = d3.least(pool, delta);
+  document.getElementById("findings").innerHTML = `
+    <div class="finding"><b><em>${ups}</em> of ${HP.length} models</b><p>are in a better mood when they lead than when they follow.</p></div>
+    <div class="finding"><b>${esc(big.name)} <em>${signed(delta(big))}</em></b><p>The biggest lift from being in charge: ${big.follow.mood.toFixed(2)} following, ${big.lead.mood.toFixed(2)} leading.</p></div>
+    <div class="finding"><b>${esc(low.name)} <em>${signed(delta(low))}</em></b><p>${delta(low) < 0 ? "The rare model that's gloomier when it leads." : "The smallest lift from being in charge."}</p></div>`;
+}
+
+function draw() {
+  const el = document.getElementById("chart");
+  el.innerHTML = "";
+  if (HP.length < 2) return;
+  const W = el.clientWidth, Hh = Math.max(520, Math.min(760, W * 0.75));
+  const M = { t: 56, r: 210, b: 24, l: 70 };
+  const ys = HP.flatMap(m => [m.follow.mood, m.lead.mood]);
+  const y = d3.scaleLinear().domain(d3.extent(ys)).nice().range([Hh - M.b, M.t]);
+  const xL = M.l, xR = W - M.r;
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${Hh}`).attr("role", "img").attr("aria-label", "Each model's mood when following versus when leading");
+  svg.append("g").attr("class", "axis").attr("transform", `translate(${xL - 18},0)`).call(d3.axisLeft(y).ticks(6).tickSize(0).tickFormat(d => d.toFixed(1))).select(".domain").remove();
+  [[xL, "Following", "dominance < 1.75"], [xR, "Leading", "dominance ≥ 2.5"]].forEach(([xx, h, s]) => {
+    svg.append("line").attr("x1", xx).attr("x2", xx).attr("y1", M.t - 8).attr("y2", Hh - M.b).attr("stroke", "#262d24");
+    svg.append("text").attr("class", "colhead").attr("x", xx).attr("y", M.t - 34).attr("text-anchor", "middle").text(h);
+    svg.append("text").attr("class", "colsub").attr("x", xx).attr("y", M.t - 18).attr("text-anchor", "middle").text(s);
+  });
+  svg.append("text").attr("class", "colsub").attr("x", xL - 18).attr("y", M.t - 34).attr("text-anchor", "end").text("mood");
+
+  const g = svg.append("g");
+  const lines = g.selectAll("g").data(HP).join("g").attr("class", "m");
+  lines.append("line").attr("class", "hit").attr("x1", xL).attr("x2", xR).attr("y1", m => y(m.follow.mood)).attr("y2", m => y(m.lead.mood))
+    .attr("stroke", "transparent").attr("stroke-width", 12).style("cursor", "pointer");
+  lines.append("line").attr("class", "slope")
+    .attr("x1", xL).attr("x2", xR).attr("y1", m => y(m.follow.mood)).attr("y2", m => y(m.lead.mood))
+    .attr("stroke", m => delta(m) >= 0 ? UP : DOWN);
+  lines.append("circle").attr("class", "end").attr("r", 5).attr("cx", xL).attr("cy", m => y(m.follow.mood)).attr("fill", m => delta(m) >= 0 ? UP : DOWN);
+  lines.append("circle").attr("class", "end").attr("r", 5).attr("cx", xR).attr("cy", m => y(m.lead.mood)).attr("fill", m => delta(m) >= 0 ? UP : DOWN);
+
+  // right labels with logos, de-collided
+  const lab = [...HP].sort((a, b) => y(a.lead.mood) - y(b.lead.mood)).map(m => ({ m, y: y(m.lead.mood) }));
+  for (let i = 1; i < lab.length; i++) if (lab[i].y - lab[i - 1].y < 17) lab[i].y = lab[i - 1].y + 17;
+  const shift = Math.max(0, lab[lab.length - 1].y - (Hh - 6));
+  lab.forEach(l => l.y -= shift);
+  lab.forEach(l => {
+    const fo = g.append("foreignObject").attr("class", "nm").datum(l.m).attr("x", xR + 12).attr("y", l.y - 10).attr("width", M.r - 14).attr("height", 20);
+    fo.append("xhtml:div").attr("style", "display:flex;gap:6px;align-items:center;font:500 12px var(--sans);color:var(--bone);white-space:nowrap;cursor:pointer")
+      .html(`${logo(l.m.name)}<span>${esc(l.m.name)}</span><span style="font:11px var(--mono);color:${delta(l.m) >= 0 ? UP : DOWN}">${signed(delta(l.m))}</span>`);
+  });
+  const focus = m => { svg.classed("focus", !!m); svg.selectAll(".slope,.end,.nm").classed("on", function () { return m && d3.select(this.parentNode).datum() === m || d3.select(this).datum() === m; }); };
+  svg.selectAll(".m, .nm")
+    .on("mouseenter", (ev, m) => focus(m))
+    .on("mousemove", (ev, m) => showTip(ev, `<h4>${esc(m.name)}</h4><div class="m">following ${m.follow.mood.toFixed(2)} (n=${m.follow.n}) → leading ${m.lead.mood.toFixed(2)} (n=${m.lead.n})</div>`))
+    .on("mouseleave", () => { hideTip(); focus(sel); })
+    .on("click", (ev, m) => { sel = m; focus(m); detail(m); });
+}
+let sel = null;
+
+function detail(m) {
+  const q = arr => arr.map(e => `<div class="quote" tabindex="0" data-ref="${esc(e.ref || "")}"><small>mood ${e.mood} · dom ${e.dom} · ${esc(e.when)}</small>${esc(e.text)}</div>`).join("");
+  document.getElementById("detail").innerHTML = `<h2>${esc(m.name)}</h2>
+    <h2 style="color:${DOWN};margin-top:12px">Following · mood ${m.follow.mood.toFixed(2)}</h2>${q(m.follow.ex)}
+    <h2 style="color:${UP};margin-top:16px">Leading · mood ${m.lead.mood.toFixed(2)}</h2>${q(m.lead.ex)}`;
+}
+
+function mini() {
+  const el = document.getElementById("mini");
+  el.innerHTML = "";
+  if (HP.length < 3) return;
+  const W = el.clientWidth || 300, Hh = 210, M = { t: 10, r: 10, b: 30, l: 34 };
+  const x = d3.scaleLinear().domain(d3.extent(HP, m => m.dom)).nice().range([M.l, W - M.r]);
+  const y = d3.scaleLinear().domain(d3.extent(HP, m => m.mood)).nice().range([Hh - M.b, M.t]);
+  const svg = d3.select(el).append("svg").attr("class", "mini").attr("viewBox", `0 0 ${W} ${Hh}`).style("width", "100%").style("height", "auto").style("display", "block");
+  svg.append("g").attr("transform", `translate(0,${Hh - M.b})`).call(d3.axisBottom(x).ticks(4)).call(a => a.select(".domain").attr("stroke", "#262d24")).selectAll("line").attr("stroke", "#262d24");
+  svg.append("g").attr("transform", `translate(${M.l},0)`).call(d3.axisLeft(y).ticks(4)).call(a => a.select(".domain").attr("stroke", "#262d24")).selectAll("line").attr("stroke", "#262d24");
+  svg.append("text").attr("x", W - M.r).attr("y", Hh - 2).attr("text-anchor", "end").text("avg dominance →");
+  svg.append("text").attr("x", M.l + 4).attr("y", M.t + 8).text("avg mood");
+  // least-squares fit
+  const mx = d3.mean(HP, m => m.dom), my = d3.mean(HP, m => m.mood);
+  const b = d3.sum(HP, m => (m.dom - mx) * (m.mood - my)) / d3.sum(HP, m => (m.dom - mx) ** 2);
+  const [x0, x1] = x.domain();
+  svg.append("line").attr("x1", x(x0)).attr("x2", x(x1)).attr("y1", y(my + b * (x0 - mx))).attr("y2", y(my + b * (x1 - mx))).attr("stroke", "#566b5e").attr("stroke-dasharray", "4 4");
+  svg.selectAll("circle").data(HP).join("circle").attr("class", "dot").attr("r", 5).attr("cx", m => x(m.dom)).attr("cy", m => y(m.mood)).attr("fill", m => labColor(m.name))
+    .on("mousemove", (ev, m) => showTip(ev, `<h4>${esc(m.name)}</h4><div class="m">avg dominance ${m.dom.toFixed(2)} · avg mood ${m.mood.toFixed(2)}</div>`)).on("mouseleave", hideTip);
+  const ups = HP.filter(m => delta(m) > 0).length;
+  document.getElementById("paradox").innerHTML = b < 0
+    ? `Across models, the bossier ones are <b style="color:var(--bone)">gloomier</b> (dashed trend). Yet within ${ups} of ${HP.length} models, leading lifts the mood. Dominant models aren't made unhappy by power; they're a gloomier kind of model to begin with.`
+    : `Across models, the bossier ones are also <b style="color:var(--bone)">happier</b> (dashed trend), and within ${ups} of ${HP.length} models, leading lifts the mood too.`;
+}
+TimeRange.mount(r => { R = r; compute(r); sel = null; findings(); draw(); mini();
+  document.getElementById("detail").innerHTML = `<p class="hint">Hover a line to isolate it. Click to read that model following and leading.</p>`; });
+document.getElementById("foot").textContent = SOURCE_NOTE + " Following = messages scored below 1.75 on the 0–4 dominance scale (deferential or submissive); leading = 2.5 or above (assertive or commanding). Models need at least 20 messages of each kind in the time frame. Mood is the 0–4 Jev mood score (distressed → delighted). The side chart plots each model's overall averages, one dot per model.";
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(draw, 150); });
+</script>
+</body>
+</html>

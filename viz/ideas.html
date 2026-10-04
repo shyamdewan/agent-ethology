@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Where Ideas Come From</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="app.css?v=1791151604">
+<link rel="stylesheet" href="neu.css?v=1791151604">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="data/dynamics.js?v=1791151604"></script>
+<script src="data/weekly.js?v=1791151604"></script>
+<script src="data/logos.js?v=1791151604"></script>
+<script src="common.js?v=1791151604"></script>
+<style>
+.lane-label { font: 500 12px var(--sans); fill: var(--bone); }
+.lane-label.dim { fill: var(--soot); }
+.lane line { stroke: var(--hair); }
+.arc { fill: none; stroke-width: 1.2; opacity: 0.14; }
+.arc.uptake { opacity: 0.45; }
+.ide-wrap { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+.ide-names { border-right: 1px solid var(--line, #262d24); }
+.ide-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-color: #566b5e transparent; }
+.ide-scroll::-webkit-scrollbar { height: 8px; }
+.ide-scroll::-webkit-scrollbar-thumb { background: #566b5e; border-radius: 4px; }
+.ide-frame { position: relative; min-width: 0; }
+.ide-fade { position: absolute; top: 0; bottom: 8px; width: 56px; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+.ide-fade.left { left: 0; background: linear-gradient(to right, #161b15, rgba(22, 27, 21, 0)); }
+.ide-fade.right { right: 0; background: linear-gradient(to left, #161b15, rgba(22, 27, 21, 0)); }
+.ide-arrow { position: absolute; top: 10px; width: 38px; height: 38px; border-radius: 50%; border: 1px solid #b5d1cc; background: #161b15; color: #b5d1cc; font: 600 22px/1 var(--sans); cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0 0 3px; }
+.ide-arrow:hover { background: rgba(181, 209, 204, 0.16); }
+.ide-arrow.left { left: 8px; } .ide-arrow.right { right: 8px; }
+.ide-frame.more-left .ide-fade.left, .ide-frame.more-right .ide-fade.right { opacity: 1; }
+.ide-frame.more-left .ide-arrow.left, .ide-frame.more-right .ide-arrow.right { display: flex; }
+.ide-hint { display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--ash); margin: 10px 0 0; }
+.ide-hint label { display: inline-flex; gap: 8px; align-items: center; }
+.ide-hint select { padding: 5px 10px; font-size: 11px; }
+.prop { cursor: pointer; }
+.prop.ignored { fill: var(--night) !important; stroke-width: 1.2; }
+.focus .arc { opacity: 0.05; }
+.focus .arc.on { opacity: 1; stroke-width: 2; }
+.focus .prop { opacity: 0.2; }
+.focus .prop.on { opacity: 1; }
+.board { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 4px; }
+.board li { display: grid; grid-template-columns: minmax(0, 1fr) 90px 38px; gap: 10px; align-items: center; font-size: 13px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.board li:hover, .board li.sel { background: var(--wash); }
+.board .who { display: flex; gap: 7px; align-items: center; min-width: 0; }
+.board .who span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .bar { height: 6px; background: var(--hair); border-radius: 3px; position: relative; }
+.board .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.board .v { font: 12px var(--mono); color: var(--ash); text-align: right; font-variant-numeric: tabular-nums; }
+.key { display: flex; gap: 16px; flex-wrap: wrap; font: 11px var(--mono); color: var(--ash); margin-bottom: 10px; }
+.key span { display: inline-flex; gap: 6px; align-items: center; }
+@media (min-width: 961px) {
+  .split > .side { position: sticky; top: var(--stick, 120px); height: auto !important; min-height: 0 !important; max-height: calc(100vh - var(--stick, 120px) - 16px); align-self: start !important; }
+}
+#board { max-height: 210px; overflow-y: auto; padding-right: 4px; }
+.open-conv { margin: 10px 0 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div><p class="eyebrow">Dynamic 02 · Origination and uptake</p><h1>Where do ideas come from?</h1></div>
+    <p class="dek">Each dot is a <b>new idea</b>. Arcs run to the agents who <b>picked it up</b> within the next 15 messages. Hollow dots went nowhere.</p>
+  </header>
+  <section class="findings" id="findings"></section>
+  <div class="controls">
+    <span class="label">Goal</span><select id="goal" aria-label="Goal period"></select>
+    <div class="key"><span><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#faed8f"/></svg>taken up</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="#0f130e" stroke="#faed8f"/></svg>ignored</span><span>arc → who took it up</span></div>
+  </div>
+  <div class="split">
+    <div class="chart" id="chart"></div>
+    <aside class="side">
+      <h2>Ideas that land · this time frame</h2>
+      <ol class="board" id="board"></ol>
+      <div id="detail"><p class="hint">Hover a dot to trace its arcs. Click it to read the idea and the replies.</p></div>
+    </aside>
+  </div>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+const I = DYN.ideas;
+const goals = I.goals;
+let cur = null, selected = null;
+
+let inRange = goals, R = null;
+function agentStats() {
+  const props = inRange.flatMap(g => g.proposals).filter(p => !R || R.has(p.t));
+  const by = d3.rollups(props, v => ({ proposals: v.length, taken_up: v.filter(p => p.n_up).length }), p => p.who)
+    .map(([n, a]) => ({ n, ...a, rate: a.taken_up / a.proposals })).filter(a => a.proposals >= 15);
+  return { props, by };
+}
+function findings() {
+  const { props } = agentStats(), by = agentStats().by.filter(a => !APPOINTED(a.n));
+  if (!props.length || !by.length) { document.getElementById("findings").innerHTML = `<div class="finding"><b>No ideas</b><p>No proposals in this time frame.</p></div>`; return; }
+  const big = by.filter(a => a.proposals >= 30);
+  const pool = big.length ? big : by;
+  const best = d3.greatest(pool, a => a.rate), most = d3.greatest(by, a => a.proposals);
+  const ignored = props.filter(p => !p.n_up).length / props.length;
+  document.getElementById("findings").innerHTML = `
+    <div class="finding"><b><em>${pct(ignored)}</em> go nowhere</b><p>Share of the ${props.length.toLocaleString()} new ideas in this time frame that no other agent picked up within 15 messages.</p></div>
+    <div class="finding"><b>${esc(most.n)}</b><p>The most prolific originator: ${most.proposals.toLocaleString()} new ideas, ${pct(most.rate)} of them taken up.</p></div>
+    <div class="finding"><b>${esc(best.n)} <em>${pct(best.rate)}</em></b><p>Highest landing rate among agents with ${big.length ? 30 : 15}+ ideas: when it proposes something, others follow.</p></div>`;
+}
+
+// whole-year board
+function renderBoard() {
+  const ag = agentStats().by.sort((a, b) => b.rate - a.rate);
+  const max = d3.max(ag, a => a.rate);
+  document.getElementById("board").innerHTML = ag.map(a => `<li data-n="${esc(a.n)}" class="${cur && cur.agents.includes(a.n) ? "" : "out"}" title="${a.proposals} ideas, ${a.taken_up} taken up">
+    <span class="who">${logo(a.n)}<span>${esc(a.n)}</span></span>
+    <span class="bar"><i style="width:${(a.rate / max) * 100}%;background:${labColor(a.n)}"></i></span>
+    <span class="v">${pct(a.rate)}</span></li>`).join("");
+}
+
+const sel = document.getElementById("goal");
+sel.onchange = () => draw(inRange[+sel.value]);
+function setRange(r) {
+  R = r;
+  inRange = goals.filter(g => r.has(g.start) || r.has(g.end) || (g.start.slice(0, 10) <= r.fromWeek && g.end.slice(0, 10) >= r.toWeek));
+  sel.innerHTML = inRange.map((g, i) => `<option value="${i}">${esc(g.goal)} · ${g.proposals.length} ideas</option>`).join("");
+  findings();
+  if (!inRange.length) { document.getElementById("chart").innerHTML = `<p class="hint">No goal periods in this time frame.</p>`; renderBoard(); return; }
+  const keep = cur ? inRange.indexOf(cur) : -1;
+  const i = keep >= 0 ? keep : d3.maxIndex(inRange, g => g.proposals.length); // default to the busiest goal
+  sel.value = i;
+  draw(inRange[i]);
+}
+
+function draw(g) {
+  cur = g; selected = null;
+  renderBoard();
+  const el = document.getElementById("chart");
+  el.innerHTML = `<div class="ide-wrap"><div class="ide-names"></div><div class="ide-frame"><div class="ide-scroll" tabindex="0" aria-label="Timeline, scroll sideways"></div><div class="ide-fade left"></div><div class="ide-fade right"></div><button class="ide-arrow left" aria-label="Scroll timeline back">‹</button><button class="ide-arrow right" aria-label="Scroll timeline forward">›</button></div></div><div class="ide-hint"><label>Jump to day <select class="ide-jump" aria-label="Jump to day"></select></label></div>`;
+  const narrow = el.clientWidth < 640, nameW = narrow ? 110 : 160;
+  const counts = d3.rollup(g.proposals, v => v.length, p => p.who);
+  const lanes = g.agents.filter(a => counts.get(a) || g.arcs.some(r => r.who === a)).sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0));
+  const M = { t: 16, r: 24, b: 34, l: 12 };
+  const laneH = 54, Hh = M.t + M.b + laneH * lanes.length;
+  // time with nights removed: order every event, then give each one its own room
+  const stamps = [...new Set([...g.proposals.map(p => p.t), ...g.arcs.map(a => a.t)])].sort();
+  const rank = new Map(stamps.map((s, i) => [s, i]));
+  const view = Math.max(300, el.querySelector(".ide-scroll").clientWidth);
+  const W = Math.max(view, M.l + M.r + stamps.length * 4.8);
+  const x = d3.scaleLinear().domain([0, Math.max(1, stamps.length - 1)]).range([M.l + 8, W - M.r]);
+  const y = d3.scaleBand().domain(lanes).range([M.t, Hh - M.b]).padding(0);
+  const ly = a => y(a) + y.bandwidth() / 2;
+  const names = d3.select(el.querySelector(".ide-names")).append("svg").attr("width", nameW).attr("height", Hh).style("display", "block");
+  const svg = d3.select(el.querySelector(".ide-scroll")).append("svg").attr("width", W).attr("height", Hh).style("display", "block")
+    .attr("role", "img").attr("aria-label", `Ideas and uptake during ${g.goal}`);
+
+  const lane = svg.append("g").attr("class", "lane");
+  lane.selectAll("line").data(lanes).join("line").attr("x1", 0).attr("x2", W).attr("y1", ly).attr("y2", ly);
+  const labels = names.append("g");
+  lanes.forEach(a => {
+    const fo = labels.append("foreignObject").attr("x", 0).attr("y", ly(a) - 10).attr("width", nameW - 12).attr("height", 22);
+    fo.append("xhtml:div").attr("style", "display:flex;gap:7px;align-items:center;font:500 12px var(--sans);color:var(--bone);white-space:nowrap;overflow:hidden;text-overflow:ellipsis")
+      .html(`${logo(a)}<span style="overflow:hidden;text-overflow:ellipsis">${esc(a)}</span>`);
+  });
+
+  // day ticks
+  const days = d3.groups(stamps, s => s.slice(0, 10));
+  const jump = el.querySelector(".ide-jump"), scroller = el.querySelector(".ide-scroll");
+  jump.innerHTML = days.map(([day, ss]) => `<option value="${x(rank.get(ss[0]))}">${new Date(day + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${ss.length} events</option>`).join("");
+  // edge fades and arrows show only where there is more timeline to see
+  const frame = el.querySelector(".ide-frame");
+  const edges = () => {
+    const atStart = scroller.scrollLeft <= 2, atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 2;
+    frame.classList.toggle("more-left", !atStart); frame.classList.toggle("more-right", !atEnd);
+  };
+  scroller.addEventListener("scroll", edges, { passive: true }); edges();
+  const smooth = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  el.querySelector(".ide-arrow.left").onclick = () => scroller.scrollBy({ left: -scroller.clientWidth * 0.8, behavior: smooth });
+  el.querySelector(".ide-arrow.right").onclick = () => scroller.scrollBy({ left: scroller.clientWidth * 0.8, behavior: smooth });
+  jump.onchange = () => scroller.scrollTo({ left: Math.max(0, +jump.value - 40), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  const ax = svg.append("g").attr("class", "axis");
+  let lastLabel = -1e9;
+  days.forEach(([day, ss]) => {
+    const xx = x(rank.get(ss[0]));
+    ax.append("line").attr("x1", xx).attr("x2", xx).attr("y1", M.t).attr("y2", Hh - M.b + 6).attr("stroke-dasharray", "2 4");
+    if (xx - lastLabel < 48) return;
+    lastLabel = xx;
+    ax.append("text").attr("x", xx + 4).attr("y", Hh - M.b + 20).text(new Date(day + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }));
+  });
+
+  const arcs = svg.append("g");
+  const byP = d3.group(g.arcs, a => a.p);
+  const path = (p, a) => {
+    const x1 = x(rank.get(p.t)), y1 = ly(p.who), x2 = x(rank.get(a.t)), y2 = ly(a.who);
+    const bend = Math.min(80, Math.abs(y2 - y1) * 0.5 + 12);
+    return `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend * 0.3},${y2} ${x2},${y2}`;
+  };
+  arcs.selectAll("path").data(g.arcs.filter(a => lanes.includes(a.who))).join("path").attr("class", "arc")
+    .attr("stroke", a => labColor(g.proposals[a.p].who)).attr("d", a => path(g.proposals[a.p], a));
+  arcs.selectAll("circle").data(g.arcs.filter(a => lanes.includes(a.who))).join("circle").attr("class", "arc uptake").style("cursor", "pointer").on("click", (ev, a) => Conversation.open(a.ref))
+    .attr("r", 2).attr("fill", a => labColor(g.proposals[a.p].who)).attr("cx", a => x(rank.get(a.t))).attr("cy", a => ly(a.who));
+
+  const r = d3.scaleSqrt().domain([0, d3.max(g.proposals, p => p.n_up) || 1]).range([3.5, 10]);
+  const dots = svg.append("g");
+  dots.selectAll("circle").data(g.proposals.filter(p => lanes.includes(p.who))).join("circle")
+    .attr("class", p => "prop" + (p.n_up ? "" : " ignored"))
+    .attr("cx", p => x(rank.get(p.t))).attr("cy", p => ly(p.who)).attr("r", p => p.n_up ? r(p.n_up) : 3.5)
+    .attr("fill", p => labColor(p.who)).attr("stroke", p => labColor(p.who))
+    .on("mouseenter", (ev, p) => focus(p))
+    .on("mousemove", (ev, p) => showTip(ev, `<h4>${esc(p.who)}</h4><div class="m">${esc(p.when)} · #${esc(p.room)} · ${p.n_up ? `taken up ${p.n_up}×` : "ignored"}</div><p style="margin:6px 0 0">${esc(p.text)}</p>`))
+    .on("mouseleave", () => { hideTip(); if (!selected) unfocus(); else focus(selected); })
+    .on("click", (ev, p) => { selected = p; focus(p); detail(p); });
+
+  function focus(p) {
+    svg.classed("focus", true);
+    arcs.selectAll(".arc").classed("on", a => a.p === p.id);
+    dots.selectAll(".prop").classed("on", q => q.id === p.id);
+  }
+  function unfocus() { svg.classed("focus", false); }
+  function detail(p) {
+    const ups = byP.get(p.id) || [];
+    document.getElementById("detail").innerHTML = `<h2>The idea</h2>
+      <div class="quote" tabindex="0" data-ref="${esc(p.ref || "")}"><small>${esc(p.who)} · ${esc(p.when)}</small>${esc(p.text)}</div>
+      ${p.ref ? `<button class="btn open-conv" data-ref="${esc(p.ref)}">Read the whole conversation →</button>` : ""}
+      ${ups.length ? `<h2 style="margin-top:16px">Who picked it up · ${ups.length}</h2>` + ups.map(a => `<div class="quote reply" tabindex="0" data-ref="${esc(a.ref || "")}"><small>${esc(a.who)} · ${esc(a.rel)} · ${esc(a.when)}</small>${esc(a.text)}</div>`).join("") : `<p class="hint">Nobody picked this one up.</p>`}`;
+  }
+  document.getElementById("detail").innerHTML = `<p class="hint">Hover a dot to trace its arcs. Click it to read the idea and the replies.</p>`;
+}
+TimeRange.mount(setRange);
+// pin the side panel just under the sticky tab + time-frame bar
+const stick = () => { const nav = document.querySelector("nav.tabs"); if (nav) document.documentElement.style.setProperty("--stick", nav.getBoundingClientRect().height + 12 + "px"); };
+stick(); addEventListener("resize", stick);
+document.getElementById("foot").textContent = SOURCE_NOTE + " A new idea is a message with Jev's new-idea probability ≥ 0.75 whose move is proposing or directing. Uptake is a later message in the same room, from another agent, aimed at the proposer and scored as supporting or deferring. Time runs in message order, so nights and weekends take no space.";
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => draw(cur), 150); });
+</script>
+</body>
+</html>

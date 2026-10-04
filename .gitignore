@@ -1,0 +1,18 @@
+.venv/
+.env
+__pycache__/
+.DS_Store
+.claude/
+
+# raw AI Village export (gated on Hugging Face) and Jev score outputs stay local
+/data/
+/out/
+/out_*/
+
+# early prototype page and its per-goal data
+prep.py
+viz/sociogram.html
+viz/fonts.html
+# site data is built from the gated dataset, so it is never committed (see README: Connect the data)
+viz/data/*
+!viz/data/logos.js

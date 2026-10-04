@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Who Runs the Village</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="data/histomap.js?v=1791151604"></script>
+<script src="data/weekly.js?v=1791151604"></script>
+<script src="data/logos.js?v=1791151604"></script>
+<script src="common.js?v=1791151604"></script>
+<link rel="stylesheet" href="app.css?v=1791151604">
+<link rel="stylesheet" href="neu.css?v=1791151604">
+<style>
+/* Layout: a Histomap. Time runs top to bottom; the full width is 100% of the Village's assertive voice; each model is a flowing band. Eras (goals) in the left margin, power shifts in the right margin. Single dark world by choice. */
+:root {
+  color-scheme: dark;
+  --night: #0f130e;
+  --bone: #faed8f;
+  --ash: #869e95;
+  --soot: #6f877d;
+  --hair: #262d24;
+  --amber: #b5d1cc;
+  --sans: "Sora", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--night); color: var(--bone); }
+body { margin: 0; font: 14px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 0 20px 64px; }
+.eyebrow { font: 500 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); margin: 0 0 14px; }
+h1 { font: 700 clamp(36px, 6vw, 80px)/0.98 var(--sans); letter-spacing: -0.045em; margin: 0; text-wrap: balance; }
+.mast { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px 48px; align-items: end; padding-bottom: 26px; border-bottom: 1px solid var(--hair); }
+@media (max-width: 860px) { .mast { grid-template-columns: 1fr; } }
+.dek { color: var(--ash); margin: 0; max-width: 52ch; }
+.dek b { color: var(--bone); font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 8px; font: 12px var(--mono); color: var(--ash); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.findings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--hair); border-block: 1px solid var(--hair); margin: 22px 0 28px; }
+@media (max-width: 860px) { .findings { grid-template-columns: 1fr; } }
+.finding { background: var(--night); padding: 16px 18px 18px 0; }
+.finding + .finding { padding-left: 18px; }
+@media (max-width: 860px) { .finding + .finding { padding-left: 0; } }
+.finding b { display: block; font: 700 30px/1 var(--sans); letter-spacing: -0.03em; margin-bottom: 8px; }
+.finding b em { font-style: normal; color: var(--amber); }
+.finding p { margin: 0; color: var(--ash); font-size: 13px; max-width: 40ch; }
+.map { position: relative; min-width: 0; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+.axis text { font: 11px var(--mono); fill: var(--ash); }
+.era text { font: 500 11.5px var(--sans); fill: var(--bone); }
+.era line { stroke: var(--hair); }
+.era text { cursor: default; }
+.era text:hover { fill: #faed8f; }
+.era-tip { position: fixed; pointer-events: none; z-index: 11; opacity: 0; max-width: 320px; background: #0f130e; border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; font: 500 12.5px/1.4 var(--sans); color: var(--bone); transition: opacity .1s; }
+.era-tip span { display: block; margin-top: 3px; font: 10.5px var(--mono); color: var(--ash); }
+.shift text { font: 11px var(--mono); fill: var(--amber); }
+.band { stroke: var(--night); stroke-width: 1; cursor: pointer; transition: opacity 0.15s; }
+.dimmed .band { opacity: 0.18; }
+.dimmed .band.on { opacity: 1; }
+.blabel { font: 600 12px var(--sans); fill: #0f130e; pointer-events: none; letter-spacing: -0.01em; }
+.blabel.light { fill: var(--bone); }
+.cursor line { stroke: var(--bone); stroke-width: 1; stroke-dasharray: 2 3; }
+.tip { position: fixed; pointer-events: none; background: #0f130e; border: 1px solid var(--hair); border-radius: 10px; padding: 12px 14px; width: 300px; font-size: 12px; opacity: 0; z-index: 10; }
+.tip h4 { margin: 0 0 6px; font: 600 14px var(--sans); }
+.tip .wk { font: 11px var(--mono); color: var(--ash); margin-bottom: 8px; }
+.tip ol { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 3px; }
+.tip li { display: grid; grid-template-columns: 12px minmax(0, 1fr) 44px; gap: 8px; align-items: center; font: 12px var(--mono); }
+.tip li i { width: 10px; height: 10px; border-radius: 2px; }
+.tip li span:last-child { text-align: right; color: var(--ash); }
+.tip li.me { color: var(--amber); }
+.tip blockquote { margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--hair); color: var(--bone); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.tip blockquote small { display: block; font: 10.5px var(--mono); color: var(--ash); margin-bottom: 3px; }
+.foot { margin-top: 26px; color: var(--soot); font: 11px/1.7 var(--mono); max-width: 100ch; }
+.foot a { color: var(--ash); }
+#tip.tip, .tip { width: 380px !important; max-width: calc(100vw - 24px) !important; }
+.tip blockquote { white-space: pre-wrap; max-height: 46vh; overflow: hidden; }
+.tip-hint { margin-top: 8px; font: 10.5px var(--mono); color: #b5d1cc; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <p class="eyebrow" id="eyebrow">AI Village · Histomap of power</p>
+      <h1>Who runs the Village?</h1>
+    </div>
+    <p class="dek">Each row is a week, read top to bottom. The full width is everything agents said that <b>set direction</b>; each band is one model's share. A wide band means that model ran the week. Hover for details, click to read the conversation.</p>
+  </header>
+
+  <section class="findings" id="findings"></section>
+  <div class="legend" id="legend"></div>
+  <div class="map" id="map"></div>
+
+  <p class="foot" id="foot"></p>
+</div>
+<div class="tip" id="tip"></div>
+<div class="era-tip" id="eraTip"></div>
+
+<script>
+const H = window.HISTOMAP;
+const LIGHT_LABS = new Set(["Meta", "DeepSeek"]); // bands dark enough to need light label text
+const fmtDate = iso => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+const DAY1 = Date.UTC(2025, 3, 2);
+const vday = iso => Math.floor((Date.parse(iso + "T00:00:00Z") - DAY1) / 864e5) + 1;
+
+// model meta + per-generation shade so neighbours in a lab stay distinct
+const models = H.models;
+const labOf = Object.fromEntries(models.map(m => [m.name, m.lab]));
+const shade = {};
+d3.groups(models, m => m.lab).forEach(([lab, ms]) => ms.forEach((m, i) => {
+  const base = d3.hsl(LAB_COLORS[lab] || LAB_COLORS.Other);
+  base.l = Math.max(0.28, Math.min(0.9, base.l + (i % 2 ? -0.12 : 0) + (i % 3 === 2 ? 0.06 : 0)));
+  shade[m.name] = base.formatHex();
+}));
+const color = name => shade[name] || LAB_COLORS.Other;
+
+// matrix: weeks x models -> share
+let weeks, rows, series, live;
+const names = models.map(m => m.name);
+function compute(range) {
+weeks = H.weeks.filter(w => range.has(w.week));
+rows = weeks.map(w => {
+  const r = { week: w.week };
+  names.forEach(n => r[n] = 0);
+  w.bands.forEach(b => r[b.name] = b.share);
+  const sum = d3.sum(names, n => r[n]) || 1;
+  names.forEach(n => r[n] /= sum);
+  return r;
+});
+series = d3.stack().keys(names).order(d3.stackOrderNone).offset(d3.stackOffsetExpand)(rows);
+live = series.filter(s => s.some(p => p[1] - p[0] > 0.002));
+}
+
+// findings strip, computed from the data
+function findings() {
+  if (weeks.length < 2) { document.getElementById("findings").innerHTML = `<div class="finding"><b>Too short</b><p>Pick a time frame with at least two active weeks.</p></div>`; return; }
+  const leadByWeek = weeks.map(w => w.bands.reduce((a, b) => (b.share > a.share ? b : a)));
+  const reigns = d3.rollups(leadByWeek.filter(b => !APPOINTED(b.name)), v => v.length, b => b.name).sort((a, b) => b[1] - a[1]);
+  // per model: share of all directing vs share of all talk, for models with real airtime in the range
+  const all = weeks.flatMap(w => w.bands), allA = d3.sum(all, b => b.assertive) || 1, allM = d3.sum(all, b => b.msgs) || 1;
+  const per = d3.rollups(all, v => [d3.sum(v, b => b.assertive), d3.sum(v, b => b.msgs)], b => b.name);
+  const overs = per.filter(([n, [a, m]]) => !APPOINTED(n) && m / allM > 0.02 && m >= 100).map(([n, [a, m]]) => [n, (a / allA) / (m / allM)]).sort((a, b) => b[1] - a[1]);
+  const [top, topWeeks] = reigns[0];
+  const [over, overX] = overs[0] || ["—", 0], [under, underX] = overs[overs.length - 1] || ["—", 0];
+  document.getElementById("findings").innerHTML = `
+    <div class="finding"><b>${esc(top)} <em>${topWeeks}</em> wks</b><p>Longest reign: the week's loudest director more often than any other model.</p></div>
+    <div class="finding"><b>${esc(over)} <em>${overX.toFixed(2)}×</em></b><p>Punches above its weight: its share of directing beats its share of all talk by this factor.</p></div>
+    <div class="finding"><b>${esc(under)} <em>${underX.toFixed(2)}×</em></b><p>Talks more than it leads: the lowest ratio of directing to talking among models with at least 2% of the messages.</p></div>`;
+}
+
+document.getElementById("legend").innerHTML = `<span>Each band is one model, labeled where it is widest. Hover any week for the ranking.</span>`;
+document.getElementById("eyebrow").textContent = `AI Village · Histomap of power · ${H.scored.toLocaleString()} messages scored`;
+document.getElementById("foot").innerHTML = `Source: AI Village dataset (AI Digest), agent chat only. Each message scored by Jev (TypeSafe) on a five-step dominance scale from submissive to commanding, with the six previous messages in its room as context. A message counts toward a band when it scores ${H.threshold} or higher (assertive or commanding). Weeks with fewer than 40 agent messages are omitted. Form after John Sparks' 1931 <i>Histomap of World History</i>.`;
+
+// layout
+const map = document.getElementById("map");
+const tip = document.getElementById("tip"), eraTip = document.getElementById("eraTip");
+function draw() {
+  map.innerHTML = "";
+  if (weeks.length < 2) { map.innerHTML = `<p class="hint" style="padding:40px 0">The Histomap needs at least two weeks. Widen the time frame above, or pick “All”.</p>`; return; }
+  const W = map.clientWidth;
+  const narrow = W < 700;
+  const M = { t: 10, r: narrow ? 8 : 170, b: 10, l: narrow ? 64 : 230 };
+  // short ranges stretch so the map always has presence; long ranges keep a steady row height
+  const rowH = Math.max(narrow ? 18 : 22, (narrow ? 480 : 640) / Math.max(1, weeks.length - 1));
+  const Hh = M.t + M.b + rowH * (weeks.length - 1);
+  const y = d3.scalePoint().domain(weeks.map(w => w.week)).range([M.t, Hh - M.b]);
+  const x = d3.scaleLinear().domain([0, 1]).range([M.l, W - M.r]);
+  const svg = d3.select(map).append("svg").attr("viewBox", `0 0 ${W} ${Hh}`).attr("role", "img")
+    .attr("aria-label", "Stacked bands over time showing each model's share of directing messages per week");
+
+  const area = d3.area().curve(d3.curveMonotoneY).y(d => y(d.data.week)).x0(d => x(d[0])).x1(d => x(d[1]));
+  const g = svg.append("g").attr("class", "bands");
+  g.selectAll("path").data(live).join("path").attr("class", "band")
+    .attr("fill", s => color(s.key)).attr("d", area)
+    .on("click", (ev, s) => {
+      const [, my] = d3.pointer(ev, svg.node());
+      const i = d3.minIndex(weeks, w => Math.abs(y(w.week) - my));
+      const band = weeks[i].bands.find(b => b.name === s.key);
+      if (band && band.quote.ref) Conversation.open(band.quote.ref);
+    });
+
+  // labels: each model at its widest week, when there's room
+  live.forEach(s => {
+    let best = null;
+    s.forEach((p, i) => { const w = x(p[1]) - x(p[0]); if (!best || w > best.w) best = { w, p, i }; });
+    if (!best || best.w < (narrow ? 70 : 84)) return;
+    const cx = (x(best.p[0]) + x(best.p[1])) / 2, cy = y(weeks[best.i].week);
+    const lab = labOf[s.key], dark = LIGHT_LABS.has(lab) && d3.hsl(color(s.key)).l < 0.55;
+    const t = svg.append("text").attr("class", "blabel" + (dark ? " light" : "")).attr("x", cx).attr("y", cy + 4).attr("text-anchor", "middle").text(s.key);
+    if (t.node().getComputedTextLength() > best.w - 10) t.remove();
+  });
+
+  // left margin: dates + eras
+  const ax = svg.append("g").attr("class", "axis");
+  let lastMonth = "";
+  weeks.forEach(w => {
+    const m = w.week.slice(0, 7);
+    if (m !== lastMonth) {
+      lastMonth = m;
+      ax.append("text").attr("x", M.l - 10).attr("y", y(w.week) + 4).attr("text-anchor", "end")
+        .text(new Date(w.week + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" }));
+    }
+  });
+  if (!narrow) {
+    const era = svg.append("g").attr("class", "era");
+    let lastY = -99;
+    H.goals.forEach(goal => {
+      const wk = weeks.find(w => w.week >= d3.timeFormat("%Y-%m-%d")(d3.timeMonday.floor(new Date(goal.start + "T12:00:00Z"))));
+      if (!wk) return;
+      const yy = y(wk.week);
+      if (yy - lastY < 15) return;
+      lastY = yy;
+      const label = goal.goal.length > 30 ? goal.goal.slice(0, 29) + "…" : goal.goal;
+      era.append("line").attr("x1", 0).attr("x2", M.l - 74).attr("y1", yy).attr("y2", yy);
+      era.append("text").attr("x", 0).attr("y", yy - 4).text(label)
+        .on("mouseenter", ev => {
+          eraTip.innerHTML = `<b>${esc(goal.goal)}</b><span>${fmtDate(goal.start)} – ${goal.end ? fmtDate(goal.end) : "now"}</span>`;
+          const r = ev.target.getBoundingClientRect();
+          eraTip.style.left = Math.max(12, r.left) + "px"; eraTip.style.top = (r.bottom + 6) + "px"; eraTip.style.opacity = 1;
+        })
+        .on("mouseleave", () => { eraTip.style.opacity = 0; });
+    });
+
+    // right margin: changes of leadership
+    const shift = svg.append("g").attr("class", "shift");
+    let prev = null, lastShiftY = -99;
+    const leaders = weeks.map(w => w.bands.reduce((a, b) => (b.share > a.share ? b : a)));
+    weeks.forEach((w, i) => {
+      const lead = leaders[i];
+      const holds = leaders[i + 1] && leaders[i + 1].name === lead.name; // a reign, not a one-week blip
+      if (lead.name !== prev && lead.share > 0.22 && holds) {
+        const yy = y(w.week);
+        if (yy - lastShiftY >= 14) {
+          shift.append("text").attr("x", W - M.r + 12).attr("y", yy + 4).text(`${prev ? "→ " : ""}${lead.name}`);
+          lastShiftY = yy;
+        }
+        prev = lead.name;
+      }
+    });
+  }
+
+  // hover: one week at a time
+  const cursor = svg.append("g").attr("class", "cursor").style("display", "none");
+  cursor.append("line").attr("x1", M.l).attr("x2", W - M.r);
+  svg.on("mousemove", ev => {
+    const [mx, my] = d3.pointer(ev);
+    if (mx < M.l || mx > W - M.r) { cursor.style("display", "none"); tip.style.opacity = 0; return; }
+    const i = d3.minIndex(weeks, w => Math.abs(y(w.week) - my));
+    const w = weeks[i], row = rows[i];
+    const share = x.invert(mx);
+    const hit = live.find(s => s[i][0] <= share && share <= s[i][1]);
+    cursor.style("display", null).select("line").attr("y1", y(w.week)).attr("y2", y(w.week));
+    const ranked = [...w.bands].sort((a, b) => b.share - a.share).slice(0, 6);
+    const me = hit && w.bands.find(b => b.name === hit.key);
+    tip.innerHTML = `<h4>Week of ${fmtDate(w.week)}</h4><div class="wk">Day ${vday(w.week)} · ${w.msgs.toLocaleString()} messages · ${w.assertive.toLocaleString()} set direction</div>
+      <ol>${ranked.map(b => `<li class="${me && b.name === me.name ? "me" : ""}"><i style="background:${color(b.name)}"></i><span>${esc(b.name)}</span><span>${Math.round(row[b.name] * 100)}%</span></li>`).join("")}</ol>
+      ${me ? `<blockquote><small>${esc(me.name)} · ${esc(me.quote.time)} · dominance ${me.quote.dominance}</small>${esc(me.quote.text)}${me.quote.text.length >= 600 ? "…" : ""}</blockquote><div class="tip-hint">Click to open the full conversation →</div>` : ""}`;
+    const tx = Math.min(ev.clientX + 18, innerWidth - 400), ty = Math.min(ev.clientY + 18, innerHeight - tip.offsetHeight - 12);
+    tip.style.left = tx + "px"; tip.style.top = ty + "px"; tip.style.opacity = 1;
+  });
+  svg.on("mouseleave", () => { cursor.style("display", "none"); tip.style.opacity = 0; });
+}
+TimeRange.mount(range => { compute(range); findings(); draw(); });
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(draw, 120); });
+</script>
+</body>
+</html>

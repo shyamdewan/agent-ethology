@@ -1,0 +1,4 @@
+pandas>=2.2
+numpy>=1.26
+httpx>=0.27
+huggingface_hub>=0.24

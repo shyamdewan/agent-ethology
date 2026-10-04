@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dissent in the Village</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="app.css?v=1791151604">
+<link rel="stylesheet" href="neu.css?v=1791151604">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="data/dynamics.js?v=1791151604"></script>
+<script src="data/weekly.js?v=1791151604"></script>
+<script src="data/logos.js?v=1791151604"></script>
+<script src="common.js?v=1791151604"></script>
+<style>
+.trace { stroke-linecap: round; cursor: pointer; }
+.trace.sel { stroke: var(--bone) !important; }
+.mid { stroke: var(--soot); }
+.ann text { font: 500 11.5px var(--sans); fill: var(--bone); }
+.ann line { stroke: var(--soot); }
+.lists { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; margin-top: 30px; border-top: 1px solid var(--hair); padding-top: 18px; }
+@media (max-width: 720px) { .lists { grid-template-columns: 1fr; } }
+.lists h2 { font: 500 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ash); margin: 0 0 4px; }
+.lists p { margin: 0 0 12px; color: var(--ash); font-size: 12.5px; }
+.board { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.board li { display: grid; grid-template-columns: 22px minmax(0, 1fr) 1.2fr 52px; gap: 10px; align-items: center; font-size: 13px; padding: 4px 0; }
+.board .n { font: 11px var(--mono); color: var(--soot); }
+.board .who { display: flex; gap: 7px; align-items: center; min-width: 0; }
+.board .who span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .bar { height: 6px; background: var(--hair); border-radius: 3px; position: relative; }
+.board .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.board .v { font: 12px var(--mono); color: var(--ash); text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div><p class="eyebrow">Dynamic 06 · Dissent and policing</p><h1>When does the Village push back?</h1></div>
+    <p class="dek">Each stroke is one week. Its height is the share of messages that <b>pushed back</b> on another agent: disagreeing, correcting or blocking. Click a spike to read the arguments.</p>
+  </header>
+  <section class="findings" id="findings"></section>
+  <div class="split">
+    <div class="chart" id="chart"></div>
+    <aside class="side"><div id="detail"><p class="hint">Click a spike to read that week's pushback.</p></div></aside>
+  </div>
+  <section class="lists">
+    <div><h2>Watchdogs</h2><p>Who pushes back most, per message sent.</p><ol class="board" id="watch"></ol></div>
+    <div><h2>Most challenged</h2><p>Who gets pushed back on most, per message sent.</p><ol class="board" id="targeted"></ol></div>
+  </section>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+const DS = DYN.dissent;
+let weeks = [], AG = [];
+function compute(range) {
+  weeks = DS.weeks.filter(w => w.msgs >= 40 && range.has(w.week));
+  const acc = {};
+  WK.diss.forEach(([s, w, m, o, t]) => { if (!range.hasIdx(w)) return; const a = (acc[s] ||= [0, 0, 0]); a[0] += m; a[1] += o; a[2] += t; });
+  AG = Object.entries(acc).filter(([s, a]) => a[0] >= 100).map(([s, a]) => ({ name: WK.names[s], msgs: a[0], opposes: a[1], rate: a[1] / a[0], targeted: a[2], targeted_rate: a[2] / a[0] }));
+}
+const weekGoal = w => { const g = d3.rollups(w.quotes, v => v.length, q => q.goal).sort((a, b) => b[1] - a[1])[0]; return g ? g[0] : ""; };
+const fmtWeek = iso => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
+function findings() {
+  if (!weeks.length || !AG.length) { document.getElementById("findings").innerHTML = `<div class="finding"><b>No data</b><p>Pick a longer time frame.</p></div>`; return; }
+  const peak = d3.greatest(weeks, w => w.rate);
+  const avg = d3.sum(weeks, w => w.opposes) / d3.sum(weeks, w => w.msgs);
+  const AGf = AG.filter(a => !APPOINTED(a.name)), watch = d3.greatest(AGf, a => a.rate);
+  const hit = d3.greatest(AGf, a => a.targeted_rate);
+  document.getElementById("findings").innerHTML = `
+    <div class="finding"><b><em>${pct(avg, 1)}</em> of messages</b><p>push back on someone. The Village is overwhelmingly agreeable; dissent arrives in bursts.</p></div>
+    <div class="finding"><b>${pct(peak.rate, 1)} <em>peak</em></b><p>Week of ${fmtWeek(peak.week)}, during “${esc(weekGoal(peak))}”: ${(peak.rate / avg).toFixed(1)}× the usual rate.</p></div>
+    <div class="finding"><b>${esc(watch.name)}</b><p>The Village's chief watchdog: pushes back in ${pct(watch.rate, 1)} of its messages. ${esc(hit.name)} draws the most pushback.</p></div>`;
+}
+
+function draw() {
+  const el = document.getElementById("chart");
+  el.innerHTML = "";
+  if (!weeks.length) return;
+  const W = el.clientWidth, Hh = Math.max(360, Math.min(480, W * 0.5));
+  const M = { t: 64, r: 16, b: 40, l: 16 };
+  const x = d3.scaleBand().domain(weeks.map(w => w.week)).range([M.l, W - M.r]).padding(0.25);
+  const mid = (M.t + Hh - M.b) / 2;
+  const h = d3.scaleLinear().domain([0, d3.max(weeks, w => w.rate)]).range([1, (Hh - M.t - M.b) / 2]);
+  const avg = d3.sum(weeks, w => w.opposes) / d3.sum(weeks, w => w.msgs);
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${Hh}`).attr("role", "img").attr("aria-label", "Weekly share of pushback messages, drawn as a seismograph");
+  svg.append("line").attr("class", "mid").attr("x1", M.l).attr("x2", W - M.r).attr("y1", mid).attr("y2", mid);
+  // jitter makes it read as a trace, deterministic per week
+  const jit = w => (((w.week.charCodeAt(8) * 31 + w.week.charCodeAt(9) * 7) % 11) - 5) / 30;
+  svg.append("g").selectAll("line").data(weeks).join("line").attr("class", "trace")
+    .attr("x1", w => x(w.week) + x.bandwidth() / 2).attr("x2", w => x(w.week) + x.bandwidth() / 2)
+    .attr("y1", w => mid - h(w.rate) * (1 + jit(w))).attr("y2", w => mid + h(w.rate) * (1 - jit(w)))
+    .attr("stroke", w => w.rate > avg * 2 ? "#e0573f" : w.rate > avg ? "#869e95" : "#566b5e")
+    .attr("stroke-width", Math.max(2, x.bandwidth()))
+    .on("mousemove", (ev, w) => showTip(ev, `<h4>Week of ${fmtWeek(w.week)}</h4><div class="m">${pct(w.rate, 1)} pushback · ${w.opposes} of ${w.msgs.toLocaleString()} messages${weekGoal(w) ? ` · ${esc(weekGoal(w))}` : ""}</div>`))
+    .on("mouseleave", hideTip)
+    .on("click", (ev, w) => { svg.selectAll(".trace").classed("sel", d => d === w); detail(w); });
+
+  // year/month axis
+  const ax = svg.append("g").attr("class", "axis");
+  let lastM = "";
+  weeks.forEach(w => {
+    const m = w.week.slice(0, 7);
+    if (m === lastM) return; lastM = m;
+    const xx = x(w.week);
+    ax.append("text").attr("x", xx).attr("y", Hh - 12).text(new Date(w.week + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", ...(m.endsWith("-01") || !ax.select("text").size() ? { year: "2-digit" } : {}), timeZone: "UTC" }));
+  });
+  ax.selectAll("text").filter((d, i, n) => i > 0 && +n[i].getAttribute("x") - +n[i - 1].getAttribute("x") < 34).remove();
+
+  // annotate the three biggest spikes with their goal
+  const seen = new Set();
+  const top = [...weeks].sort((a, b) => b.rate - a.rate).filter(w => { const g = weekGoal(w); if (!g || seen.has(g)) return false; seen.add(g); return true; })
+    .slice(0, 3).sort((a, b) => a.week.localeCompare(b.week));
+  const ann = svg.append("g").attr("class", "ann");
+  top.forEach((w, i) => {
+    const xx = x(w.week) + x.bandwidth() / 2, yTop = mid - h(w.rate) - 4, ly = 16 + (i % 2) * 18;
+    ann.append("line").attr("x1", xx).attr("x2", xx).attr("y1", ly + 4).attr("y2", yTop);
+    const g = weekGoal(w);
+    ann.append("text").attr("x", xx).attr("y", ly).attr("text-anchor", xx > W * 0.75 ? "end" : xx < W * 0.2 ? "start" : "middle").text(g.length > 34 ? g.slice(0, 33) + "…" : g);
+  });
+}
+
+function detail(w) {
+  document.getElementById("detail").innerHTML = `<h2>Week of ${fmtWeek(w.week)}</h2>
+    <p class="hint" style="margin-bottom:12px">${w.opposes} pushback messages of ${w.msgs.toLocaleString()} (${pct(w.rate, 1)})${weekGoal(w) ? ` · ${esc(weekGoal(w))}` : ""}</p>
+    ${w.quotes.length ? w.quotes.map(q => `<div class="quote" tabindex="0" data-ref="${esc(q.ref || "")}"><small>${esc(q.who)} → ${esc(q.to)} · ${esc(q.when)}</small>${esc(q.text)}</div>`).join("") : `<p class="hint">No pushback this week.</p>`}`;
+}
+
+function boards() {
+  const list = (arr, key, id) => {
+    const m = d3.max(arr, a => a[key]) || 1;
+    document.getElementById(id).innerHTML = arr.slice(0, 10).map((a, i) => `<li><span class="n">${String(i + 1).padStart(2, "0")}</span>
+      <span class="who">${logo(a.name)}<span>${esc(a.name)}</span></span>
+      <span class="bar"><i style="width:${a[key] / m * 100}%;background:${labColor(a.name)}"></i></span><span class="v">${pct(a[key], 1)}</span></li>`).join("");
+  };
+  list([...AG].sort((a, b) => b.rate - a.rate), "rate", "watch");
+  list([...AG].sort((a, b) => b.targeted_rate - a.targeted_rate), "targeted_rate", "targeted");
+}
+TimeRange.mount(r => { compute(r); findings(); draw(); boards();
+  document.getElementById("detail").innerHTML = `<p class="hint">Click a spike to read that week's pushback.</p>`; });
+document.getElementById("foot").textContent = SOURCE_NOTE + " Pushback = messages whose move Jev scored as opposing: disagreeing with, criticizing, correcting or blocking the target. Weeks with fewer than 40 agent messages are omitted. Amber strokes are weeks above twice the overall rate. Boards include agents with at least 100 messages in the time frame.";
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(draw, 150); });
+</script>
+</body>
+</html>

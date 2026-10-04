@@ -1,0 +1,66 @@
+/* Agent Ethology — flat layer (replaces the neumorphic trial). Loaded last on every page.
+   One ground (#161b15), hairline outlines, tinted fills for selection and quote wells. No shadows. */
+:root, :root:where(*) {
+  --night: #161b15;
+  --ground: #161b15;
+  --line: rgba(181, 209, 204, 0.18);
+  --line-strong: rgba(181, 209, 204, 0.32);
+  --tile: rgba(250, 237, 143, 0.035);
+  --well: rgba(181, 209, 204, 0.06);
+  --pick: rgba(181, 209, 204, 0.16);
+}
+html, body { background: var(--ground) !important; }
+
+/* header */
+.tabs { background: var(--ground); border-bottom: 1px solid var(--line); box-shadow: none; }
+.range { border-top: 1px solid var(--line); }
+.range-strip { border-radius: 8px; border: 1px solid var(--line); padding: 2px 6px; box-shadow: none; }
+.mast { border-bottom: 0; }
+
+/* buttons and selects: outlined pills; selected = filled tint */
+.btn, select { border: 1px solid var(--line-strong) !important; background: transparent !important; border-radius: 999px !important; box-shadow: none !important; }
+select { background: var(--ground) !important; }
+.btn:hover, select:hover { border-color: #b5d1cc !important; }
+.btn[aria-pressed="true"] { background: var(--pick) !important; border-color: #b5d1cc !important; color: #b5d1cc; }
+.btn:disabled { opacity: 0.35; }
+
+/* findings: three outlined tiles */
+.findings { background: none !important; border: 0 !important; gap: 16px !important; margin: 26px 0 30px !important; }
+.finding, .finding + .finding { background: var(--tile) !important; border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px !important; box-shadow: none; }
+
+/* chart panels outlined; side panels tinted */
+.chart, .map { background: transparent; border: 1px solid var(--line); border-radius: 18px; padding: 16px; box-shadow: none; }
+.chart .chart { border: 0; padding: 0; border-radius: 0; }
+.side { border: 1px solid var(--line) !important; border-radius: 18px; background: var(--well); padding: 18px !important; box-shadow: none; align-self: start; }
+@media (max-width: 960px) { .side { padding: 16px !important; } }
+.lists { border-top: 0 !important; }
+
+/* receipts: tinted wells, colour edge kept */
+.quote, .face, .back, .note, .sess, .obs { border-radius: 4px 10px 10px 4px !important; background: var(--well) !important; box-shadow: none; padding: 10px 12px 11px 14px !important; border-left-width: 3px !important; margin-bottom: 10px; }
+.quote.reply { margin-left: 16px; }
+
+/* list rows */
+.board li:hover, .rank li:hover, .pairs li:hover, .cmd li:hover { background: var(--well) !important; box-shadow: none; }
+.board li.sel, .rank li.sel { background: var(--pick) !important; box-shadow: none; }
+
+/* tooltip and drawers */
+.tip { background: var(--ground) !important; border: 1px solid var(--line-strong) !important; box-shadow: none; border-radius: 12px !important; }
+.convo { background: var(--ground) !important; border-left: 1px solid var(--line) !important; box-shadow: none; }
+.convo-nav { border-bottom: 1px solid var(--line) !important; }
+.cv-msg { margin: 0; border-radius: 0; box-shadow: none; }
+.cv-msg + .cv-msg { border-top: 1px solid var(--line) !important; }
+.cv-msg.focus { background: var(--pick) !important; box-shadow: none; }
+.cv-chip { border: 1px solid var(--line) !important; box-shadow: none; padding: 1px 7px !important; }
+
+/* time strip: the outline must contain the whole strip */
+.range-strip { height: auto !important; padding: 4px 8px !important; box-sizing: border-box; }
+.range-strip svg { height: 26px !important; display: block; }
+
+/* side panels never stretch the row: they take the chart's height and scroll inside */
+@media (min-width: 961px) {
+  .split { align-items: stretch !important; }
+  .split > .side { height: 0; min-height: 100%; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: #566b5e transparent; }
+  .split > .side::-webkit-scrollbar { width: 8px; }
+  .split > .side::-webkit-scrollbar-thumb { background: #566b5e; border-radius: 4px; }
+  .split > .chart, .split > div:first-child { align-self: start; }
+}

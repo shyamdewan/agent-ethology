@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Who Defers to Whom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="app.css?v=1791151604">
+<link rel="stylesheet" href="neu.css?v=1791151604">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="data/dynamics.js?v=1791151604"></script>
+<script src="data/weekly.js?v=1791151604"></script>
+<script src="data/logos.js?v=1791151604"></script>
+<script src="common.js?v=1791151604"></script>
+<style>
+.cell { cursor: pointer; }
+.cell:hover { stroke: var(--bone); stroke-width: 1.5; }
+.cell.sel { stroke: var(--bone); stroke-width: 2; }
+.ctext { font: 10.5px var(--mono); fill: var(--night); pointer-events: none; }
+.ctext.light { fill: var(--bone); }
+.rowlab, .collab { font: 500 12px var(--sans); fill: var(--bone); }
+.collab { font-size: 11px; }
+.ladder text { font: 12px var(--mono); fill: var(--ash); }
+.scale { display: flex; align-items: center; gap: 8px; font: 11px var(--mono); color: var(--ash); }
+.scale i { width: 160px; height: 10px; border-radius: 2px; background: linear-gradient(90deg, #b5d1cc, #262d24 50%, #e0573f); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div><p class="eyebrow">Dynamic 03 · Dominance contests</p><h1>Who defers to whom?</h1></div>
+    <p class="dek">When one agent <b>gives an order</b> or another <b>defers</b>, that's a contest won. Rows are ranked by <b>David's score</b>, the pecking-order measure ethologists use for animals. Read across a row to see who it outranks.</p>
+  </header>
+  <section class="findings" id="findings"></section>
+  <div class="controls">
+    <span class="scale">row loses <i></i> row wins</span>
+  </div>
+  <div class="split">
+    <div class="chart" id="chart"></div>
+    <aside class="side"><div id="detail"><p class="hint">Click a square to read real exchanges between that pair.</p></div></aside>
+  </div>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+const NAMES = WK.names;
+let level = "model", R = null, L = null;
+const color = d3.scaleDiverging(t => d3.interpolateRgbBasis(["#b5d1cc", "#262d24", "#e0573f"])(t)).domain([0, 0.5, 1]);
+
+function davids(names, wins) {
+  const P = (a, b) => { const n = wins[a][b] + wins[b][a]; return n ? wins[a][b] / n : 0; };
+  const w = {}, l = {};
+  names.forEach(a => { w[a] = d3.sum(names, b => b === a ? 0 : P(a, b)); l[a] = d3.sum(names, b => b === a ? 0 : P(b, a)); });
+  const out = {};
+  names.forEach(a => {
+    const w2 = d3.sum(names, b => b === a ? 0 : P(a, b) * w[b]), l2 = d3.sum(names, b => b === a ? 0 : P(b, a) * l[b]);
+    out[a] = w[a] + w2 - l[a] - l2;
+  });
+  return out;
+}
+function build(range, lvl) {
+  const key = lvl === "lab" ? (i => labOfName(NAMES[i])) : (i => NAMES[i]);
+  const wins = {}, tot = {}, raw = {};
+  WK.defer.forEach(([w, a, b, n]) => {
+    if (!range.hasIdx(w)) return;
+    const A = key(a), B = key(b);
+    if (A === B && lvl === "lab") { /* same-lab contests count toward the diagonal only */ }
+    ((wins[A] ||= {})[B] = (wins[A][B] || 0) + n);
+    tot[A] = (tot[A] || 0) + n; tot[B] = (tot[B] || 0) + n;
+    ((raw[A + "|" + B] ||= []).push([a, b]));
+  });
+  const min = lvl === "lab" ? 5 : 15;
+  let names = Object.keys(tot).filter(n => tot[n] >= min && n !== "Other");
+  const W = {}; names.forEach(a => { W[a] = {}; names.forEach(b => W[a][b] = (wins[a] && wins[a][b]) || 0); });
+  const score = davids(names, W);
+  names.sort((a, b) => score[b] - score[a]);
+  return { names, wins: W, score, tot };
+}
+function examples(a, b) {
+  const ids = level === "lab" ? null : [NAMES.indexOf(a), NAMES.indexOf(b)];
+  const out = [];
+  Object.entries(WK.defer_ex).forEach(([k, ex]) => {
+    const [x, y] = k.split("|").map(Number);
+    const X = level === "lab" ? labOfName(NAMES[x]) : NAMES[x], Y = level === "lab" ? labOfName(NAMES[y]) : NAMES[y];
+    if (!((X === a && Y === b) || (X === b && Y === a))) return;
+    ex.forEach(e => { if (R.hasIdx(e.w)) out.push(e); });
+  });
+  return d3.shuffle(out).slice(0, 6);
+}
+
+function findings() {
+  const mod = build(R, "model");
+  mod.names = mod.names.filter(n => !APPOINTED(n));
+  let best = null;
+  mod.names.forEach(a => mod.names.forEach(b => {
+    if (a >= b) return;
+    const w = mod.wins[a][b], l = mod.wins[b][a], n = w + l;
+    if (n < 20) return;
+    const r = Math.max(w, l) / n, top = w >= l ? [a, b, w, l] : [b, a, l, w];
+    if (!best || r > best.r) best = { r, top };
+  }));
+  const king = mod.names[0];
+  const bottom = mod.names[mod.names.length - 1];
+  document.getElementById("findings").innerHTML = (bottom && bottom !== king ? `
+    <div class="finding"><b>${esc(bottom)}</b><p>Bottom of the pecking order (David's score ${mod.score[bottom].toFixed(1)}): it gives way to more models than it outranks.</p></div>` : "") +
+    (king ? `<div class="finding"><b>${esc(king)}</b><p>Top of the model pecking order by David's score (${mod.score[king].toFixed(1)}) in this time frame.</p></div>` : "") +
+    (best ? `<div class="finding"><b>${esc(best.top[0])} <em>${best.top[2]}</em> : ${best.top[3]}</b><p>The most one-sided rivalry with 20+ contests: ${esc(best.top[1])} almost always gives way.</p></div>` : "");
+}
+
+function draw() {
+  L = build(R, level);
+  const names = L.names;
+  const el = document.getElementById("chart");
+  el.innerHTML = "";
+  if (names.length < 2) { el.innerHTML = `<p class="hint">Too few contests in this time frame to rank anyone.</p>`; return; }
+  const W = el.clientWidth;
+  const ladderW = 130;
+  const left = level === "lab" ? 120 : 150, top = level === "lab" ? 40 : 110;
+  const size = Math.min(level === "lab" ? 90 : 34, (W - left - ladderW - 20) / names.length);
+  const Hh = top + size * names.length + 20;
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${Hh}`).attr("role", "img").attr("aria-label", "Win rate of each row over each column");
+  const pos = i => left + i * size;
+
+  names.forEach((n, i) => {
+    const fo = svg.append("foreignObject").attr("x", 0).attr("y", top + i * size + size / 2 - 11).attr("width", left - 10).attr("height", 22);
+    fo.append("xhtml:div").attr("style", "display:flex;gap:7px;align-items:center;justify-content:flex-end;font:500 12px var(--sans);color:var(--bone);white-space:nowrap;overflow:hidden")
+      .html(`<span style="overflow:hidden;text-overflow:ellipsis">${esc(n)}</span>${logo(n)}`);
+    const t = svg.append("text").attr("class", "collab");
+    if (level === "lab") t.attr("x", pos(i) + size / 2).attr("y", top - 12).attr("text-anchor", "middle").text(n);
+    else t.attr("transform", `translate(${pos(i) + size / 2 + 4},${top - 8}) rotate(-55)`).text(n.length > 18 ? n.slice(0, 17) + "…" : n);
+  });
+
+  const cells = [];
+  names.forEach((a, i) => names.forEach((b, j) => {
+    if (i === j) return;
+    const w = L.wins[a][b], l = L.wins[b][a], n = w + l;
+    cells.push({ a, b, i, j, w, l, n, r: n ? w / n : null });
+  }));
+  const g = svg.append("g");
+  g.selectAll("rect").data(cells).join("rect").attr("class", "cell")
+    .attr("x", c => pos(c.j) + 1).attr("y", c => top + c.i * size + 1).attr("width", size - 2).attr("height", size - 2).attr("rx", 2)
+    .attr("fill", c => c.n >= 3 ? color(c.r) : "#090c08").attr("opacity", c => c.n >= 3 ? Math.min(1, 0.35 + c.n / 40) : 1)
+    .on("mousemove", (ev, c) => showTip(ev, `<h4>${esc(c.a)} vs ${esc(c.b)}</h4><div class="m">${c.w} wins · ${c.l} losses${c.n ? ` · ${pct(c.r)} win rate` : ""}</div>`))
+    .on("mouseleave", hideTip)
+    .on("click", (ev, c) => { g.selectAll(".cell").classed("sel", d => d === c); detail(c); });
+  if (size >= 30) g.selectAll("text").data(cells.filter(c => c.n >= 3)).join("text")
+    .attr("class", c => "ctext" + (Math.abs(c.r - 0.5) < 0.2 ? " light" : ""))
+    .attr("x", c => pos(c.j) + size / 2).attr("y", c => top + c.i * size + size / 2 + 4).attr("text-anchor", "middle")
+    .text(c => level === "lab" ? `${c.w}:${c.l}` : pct(c.r));
+  svg.append("g").selectAll("rect").data(names).join("rect").attr("x", (n, i) => pos(i) + 1).attr("y", (n, i) => top + i * size + 1)
+    .attr("width", size - 2).attr("height", size - 2).attr("fill", "none").attr("stroke", "#262d24").attr("stroke-dasharray", "2 3");
+
+  const ext = d3.extent(names.map(n => L.score[n]));
+  const sx = d3.scaleLinear().domain([Math.min(ext[0], -0.5), Math.max(ext[1], 0.5)]).range([0, ladderW - 46]);
+  const lx = left + size * names.length + 24;
+  const lad = svg.append("g").attr("class", "ladder");
+  lad.append("text").attr("x", lx).attr("y", top - 12).text("David's score").attr("fill", "var(--ash)");
+  lad.append("line").attr("x1", lx + sx(0)).attr("x2", lx + sx(0)).attr("y1", top).attr("y2", top + size * names.length).attr("stroke", "#566b5e");
+  names.forEach((n, i) => {
+    const v = L.score[n], cy = top + i * size + size / 2;
+    lad.append("rect").attr("x", lx + Math.min(sx(0), sx(v))).attr("y", cy - 4).attr("height", 8).attr("rx", 2)
+      .attr("width", Math.abs(sx(v) - sx(0))).attr("fill", labColor(n));
+    lad.append("text").attr("x", lx + ladderW - 40).attr("y", cy + 4).text(signed(v, 1));
+  });
+}
+
+function detail(c) {
+  const ex = examples(c.a, c.b);
+  document.getElementById("detail").innerHTML = `<h2>${esc(c.a)} vs ${esc(c.b)}</h2>
+    <p class="hint" style="margin-bottom:14px">${esc(c.a)} won ${c.w} of ${c.n} contests${c.n ? ` (${pct(c.r)})` : ""} in this time frame.</p>
+    ${ex.length ? ex.map(e => `<div class="quote" tabindex="0" data-ref="${esc(e.ref || "")}"><small>${esc(e.who)} ${e.rel === "directs" ? "directs" : "defers to"} ${esc(e.to)} · ${esc(e.when)}</small>${esc(e.text)}</div>`).join("") : `<p class="hint">No sample exchanges for this pair in this time frame.</p>`}`;
+}
+const resetDetail = () => document.getElementById("detail").innerHTML = `<p class="hint">Click a square to read real exchanges between that pair.</p>`;
+
+document.querySelectorAll("[data-level]").forEach(b => b.onclick = () => {
+  level = b.dataset.level;
+  document.querySelectorAll("[data-level]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  resetDetail(); draw();
+});
+TimeRange.mount(r => { R = r; resetDetail(); findings(); draw(); });
+document.getElementById("foot").textContent = SOURCE_NOTE + " A contest is won by A over B when A directs B, or when B defers to A. Squares with fewer than 3 contests are left dark; faint squares rest on few contests. Models need 15+ contests in the time frame to be ranked. David's score: H. A. David (1987), Ranking from unbalanced paired-comparison data, Biometrika.";
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(draw, 150); });
+</script>
+</body>
+</html>

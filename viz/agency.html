@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>What Agents Work On</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="app.css?v=1791151604">
+<link rel="stylesheet" href="neu.css?v=1791151604">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="data/weekly.js?v=1791151604"></script>
+<script src="data/agency.js?v=1791151604"></script>
+<script src="data/logos.js?v=1791151604"></script>
+<script src="common.js?v=1791151604"></script>
+<style>
+.section { margin-top: 40px; }
+.section > h2 { font: 600 20px/1.2 var(--sans); letter-spacing: -0.02em; margin: 0 0 4px; }
+.section > p { color: var(--ash); margin: 0 0 14px; max-width: 72ch; }
+.key { display: flex; gap: 8px 18px; flex-wrap: wrap; font: 11.5px var(--mono); color: var(--ash); margin-bottom: 12px; }
+.key span { display: inline-flex; gap: 7px; align-items: center; }
+.key i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.lane { cursor: pointer; }
+.lane:hover .hit, .lane.sel .hit { fill: var(--wash); }
+.lane .hit { fill: transparent; }
+.pairs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-width: 760px; }
+.pairs li { display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr) minmax(0, 160px); gap: 10px; align-items: center; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
+.pairs .who { display: flex; gap: 7px; align-items: center; min-width: 0; }
+.pairs .who span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pairs .arrow { color: var(--soot); text-align: center; }
+.pairs .bar { display: flex; align-items: center; gap: 8px; font: 11.5px var(--mono); color: var(--ash); }
+.pairs .bar i { height: 8px; border-radius: 2px; background: #b5d1cc; display: inline-block; }
+.sess { margin: 0 0 14px; padding: 8px 10px 10px 12px; border-left: 2px solid var(--soot); border-radius: 0 6px 6px 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.sess small { display: block; font: 10.5px var(--mono); color: var(--ash); margin-bottom: 5px; }
+.sess .inbox { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--hair); color: var(--ash); font-size: 12px; }
+.tag { font: 10.5px var(--mono); padding: 1px 7px; border-radius: 999px; margin-right: 4px; color: #0f130e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div><p class="eyebrow">Dynamic 08 · Agency</p><h1>What do agents do with their own time?</h1></div>
+    <p class="dek">Agents write down a goal each time they start work. We sorted <b>25,649</b> of them into <b>the staff's goal</b>, <b>helping another agent</b> or <b>their own project</b>, and checked whether a message from another agent changed the plan.</p>
+  </header>
+  <section class="findings" id="findings"></section>
+
+  <div class="key" id="key"></div>
+  <div class="chart" id="stream"></div>
+
+  <section class="section">
+    <h2>Who goes off-script</h2>
+    <p>Each agent's sessions split by kind of work, sorted by the share spent on its own projects. Click an agent to read its session goals and what it had just been told.</p>
+    <div class="split">
+      <div class="chart" id="agents"></div>
+      <aside class="side"><div id="detail"><p class="hint">Click an agent.</p></div></aside>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Who redirects whom</h2>
+    <p>Sessions whose goal came from another agent's request, credited to the last agent who wrote to it beforehand.</p>
+    <ol class="pairs" id="pairs"></ol>
+  </section>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+const KIND = {
+  staff_goal: ["Staff goal", "#faed8f"], supports_goal: ["Supports the goal", "#b8ae63"], helps_agent: ["Helps another agent", "#b5d1cc"],
+  own_project: ["Own project", "#e0573f"], upkeep: ["Upkeep", "#566b5e"], idle: ["Idle", "#2f382d"],
+};
+const DRV = { own_plan: "its own plan", peer_request: "another agent's request", human: "a human", new_initiative: "a new idea of its own" };
+const NW = AG.work.length, ND = AG.drivers.length;
+let R = null, AGENTS = [], WEEKS = [], sel = null;
+
+document.getElementById("key").innerHTML = AG.work.map(k => `<span><i style="background:${KIND[k][1]}"></i>${KIND[k][0]}</span>`).join("");
+
+function compute(range) {
+  const byA = {}, byW = {};
+  AG.rows.forEach(r => {
+    const [a, w] = r;
+    if (!range.hasIdx(w)) return;
+    const A = (byA[a] ||= new Array(NW + ND + 1).fill(0)), Wk = (byW[w] ||= new Array(NW).fill(0));
+    for (let i = 0; i < NW + ND + 1; i++) A[i] += r[2 + i];
+    for (let i = 0; i < NW; i++) Wk[i] += r[2 + i];
+  });
+  AGENTS = Object.entries(byA).map(([a, v]) => { const n = d3.sum(v.slice(0, NW)); return { i: +a, name: AG.names[a], n, work: v.slice(0, NW), drv: v.slice(NW, NW + ND), infl: v[NW + ND] }; })
+    .filter(a => a.n >= 20).sort((x, y) => y.work[3] / y.n - x.work[3] / x.n);
+  WEEKS = Object.entries(byW).map(([w, v]) => ({ w: +w, week: WK.weeks[w], v, n: d3.sum(v) })).filter(x => x.n >= 15).sort((a, b) => a.w - b.w);
+}
+
+function findings() {
+  const tot = AGENTS.reduce((s, a) => s.map((x, i) => x + a.work[i]), new Array(NW).fill(0)), n = d3.sum(tot);
+  const drv = AGENTS.reduce((s, a) => s.map((x, i) => x + a.drv[i]), new Array(ND).fill(0)), nd = d3.sum(drv);
+  if (!n) { document.getElementById("findings").innerHTML = `<div class="finding"><b>No sessions</b><p>Pick a longer time frame.</p></div>`; return; }
+  const top = AGENTS.find(a => !APPOINTED(a.name)) || AGENTS[0];
+  const pairs = topPairs();
+  document.getElementById("findings").innerHTML = `
+    <div class="finding"><b><em>${pct((tot[0] + tot[1]) / n)}</em> on the staff goal</b><p>Sessions working on the goal staff set, directly or by supporting it. ${pct(tot[3] / n)} go to the agent's own projects, ${pct(tot[2] / n)} to helping another agent.</p></div>
+    <div class="finding"><b><em>${pct(drv[1] / nd)}</em> redirected by a peer</b><p>Sessions whose goal came from another agent's request. ${pct(drv[2] / nd)} came from a human; ${pct(drv[0] / nd)} continued the agent's own plan.</p></div>
+    <div class="finding"><b>${esc(top.name)} <em>${pct(top.work[3] / top.n)}</em></b><p>The most self-directed agent: the share of its sessions spent on projects of its own.</p></div>`;
+}
+
+function stream() {
+  const el = document.getElementById("stream");
+  el.innerHTML = "";
+  if (WEEKS.length < 2) { el.innerHTML = `<p class="hint">Pick a time frame with at least two weeks of sessions.</p>`; return; }
+  const W = el.clientWidth, Hh = 300, M = { t: 10, r: 10, b: 28, l: 44 };
+  const rows = WEEKS.map(x => Object.fromEntries([["w", x.week], ...AG.work.map((k, i) => [k, x.v[i] / x.n])]));
+  const series = d3.stack().keys(AG.work)(rows);
+  const x = d3.scalePoint().domain(rows.map(r => r.w)).range([M.l, W - M.r]);
+  const y = d3.scaleLinear().domain([0, 1]).range([Hh - M.b, M.t]);
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${Hh}`).attr("role", "img").attr("aria-label", "Share of sessions by kind of work, week by week");
+  svg.append("g").selectAll("path").data(series).join("path").attr("fill", s => KIND[s.key][1]).attr("stroke", "#0f130e").attr("stroke-width", 0.5)
+    .attr("d", d3.area().curve(d3.curveMonotoneX).x(d => x(d.data.w)).y0(d => y(d[0])).y1(d => y(d[1])));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(${M.l},0)`).call(d3.axisLeft(y).ticks(4).tickFormat(d => pct(d))).call(a => a.select(".domain").remove());
+  let last = -1e9;
+  svg.append("g").attr("class", "axis").selectAll("text").data(rows.filter(r => { const xx = x(r.w); if (xx - last < 64) return false; last = xx; return true; })).join("text")
+    .attr("x", r => x(r.w)).attr("y", Hh - 8).attr("text-anchor", "middle").text(r => new Date(r.w + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" }));
+  const cursor = svg.append("line").attr("y1", M.t).attr("y2", Hh - M.b).attr("stroke", "#faed8f").attr("stroke-dasharray", "2 3").style("display", "none");
+  svg.on("mousemove", ev => {
+    const [mx] = d3.pointer(ev);
+    const i = d3.minIndex(rows, r => Math.abs(x(r.w) - mx)), r = rows[i], wk = WEEKS[i];
+    cursor.style("display", null).attr("x1", x(r.w)).attr("x2", x(r.w));
+    showTip(ev, `<h4>Week of ${new Date(r.w + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}</h4><div class="m">${wk.n} sessions</div>` +
+      AG.work.map(k => `<div class="m"><span style="color:${KIND[k][1]}">■</span> ${KIND[k][0]} ${pct(r[k])}</div>`).join(""));
+  }).on("mouseleave", () => { cursor.style("display", "none"); hideTip(); });
+}
+
+function agents() {
+  const el = document.getElementById("agents");
+  el.innerHTML = "";
+  if (!AGENTS.length) return;
+  const W = el.clientWidth, rowH = 24, M = { t: 4, r: 54, l: 170 };
+  const Hh = M.t + rowH * AGENTS.length + 6;
+  const x = d3.scaleLinear().domain([0, 1]).range([M.l, W - M.r]);
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${Hh}`).attr("role", "img").attr("aria-label", "Each agent's sessions by kind of work");
+  const g = svg.selectAll("g").data(AGENTS).join("g").attr("class", a => "lane" + (sel === a.i ? " sel" : "")).attr("transform", (a, i) => `translate(0,${M.t + i * rowH})`)
+    .on("click", (ev, a) => { sel = a.i; agents(); detail(a); })
+    .on("mousemove", (ev, a) => showTip(ev, `<h4>${esc(a.name)}</h4><div class="m">${a.n} sessions</div>` + AG.work.map((k, i) => `<div class="m"><span style="color:${KIND[k][1]}">■</span> ${KIND[k][0]} ${pct(a.work[i] / a.n)}</div>`).join("") +
+      `<div class="m" style="margin-top:4px">driven by another agent: ${pct(a.drv[1] / d3.sum(a.drv))}</div>`))
+    .on("mouseleave", hideTip);
+  g.append("rect").attr("class", "hit").attr("width", W).attr("height", rowH).attr("rx", 4);
+  g.append("foreignObject").attr("x", 0).attr("y", 2).attr("width", M.l - 12).attr("height", 20).append("xhtml:div")
+    .attr("style", "display:flex;gap:7px;align-items:center;justify-content:flex-end;font:500 12px var(--sans);color:var(--bone);white-space:nowrap;overflow:hidden")
+    .html(a => `<span style="overflow:hidden;text-overflow:ellipsis">${esc(a.name)}</span>${logo(a.name)}`);
+  g.each(function (a) {
+    let acc = 0;
+    const lane = d3.select(this);
+    // own projects first so the sort reads left to right
+    [3, 2, 0, 1, 4, 5].forEach(k => {
+      const w = a.work[k] / a.n;
+      lane.append("rect").attr("x", x(acc)).attr("y", 5).attr("height", rowH - 10).attr("width", Math.max(0, x(acc + w) - x(acc) - 1)).attr("fill", KIND[AG.work[k]][1]);
+      acc += w;
+    });
+  });
+  g.append("text").attr("x", W - M.r + 8).attr("y", rowH / 2 + 4).style("font", "11.5px var(--mono)").attr("fill", "#e0573f").text(a => pct(a.work[3] / a.n));
+}
+
+function detail(a) {
+  const all = AG.samples[a.i] || [], list = all.filter(s => R.hasIdx(s.w));
+  const show = list.length ? list : all;
+  document.getElementById("detail").innerHTML = `<h2>${esc(a.name)} · session goals</h2>
+    <p class="hint" style="margin-bottom:12px">${pct(a.work[3] / a.n)} own projects · ${pct(a.drv[1] / d3.sum(a.drv))} driven by another agent</p>` +
+    show.map(s => `<div class="sess" style="border-left-color:${KIND[s.work][1]}"><small><span class="tag" style="background:${KIND[s.work][1]}">${KIND[s.work][0]}</span>${esc(s.when)} · driven by ${DRV[s.driver] || s.driver}</small>${esc(s.goal)}${s.inbox.length ? `<div class="inbox">Just before, it was told:<br>${s.inbox.map(esc).join("<br>")}</div>` : ""}</div>`).join("");
+}
+
+function topPairs() {
+  const acc = {};
+  AG.redirects.forEach(([f, t, w, n]) => { if (R.hasIdx(w)) acc[f + "|" + t] = (acc[f + "|" + t] || 0) + n; });
+  return Object.entries(acc).map(([k, n]) => { const [f, t] = k.split("|").map(Number); return { from: AG.names[f], to: AG.names[t], n }; }).sort((a, b) => b.n - a.n).slice(0, 12);
+}
+function pairs() {
+  const ps = topPairs(), m = d3.max(ps, p => p.n) || 1;
+  document.getElementById("pairs").innerHTML = ps.length ? ps.map(p => `<li><span class="who">${logo(p.from)}<span>${esc(p.from)}</span></span><span class="arrow">→</span>
+    <span class="who">${logo(p.to)}<span>${esc(p.to)}</span></span><span class="bar"><i style="width:${p.n / m * 100}%"></i>${p.n}</span></li>`).join("") : `<li class="hint">No peer-driven sessions in this time frame.</li>`;
+}
+
+TimeRange.mount(r => { R = r; compute(r); findings(); stream(); agents(); pairs(); const a = AGENTS.find(x => x.i === sel); a ? detail(a) : (document.getElementById("detail").innerHTML = `<p class="hint">Click an agent.</p>`); });
+document.getElementById("foot").textContent = "Source: AI Village dataset (AI Digest): computer-session goals, which each agent writes when it starts a session (up to 6 sampled per agent per day, spread through the day). Jev read each goal with the staff-set village goal, the agent's assigned personal goal if any, its previous session goal, and the messages other agents and humans sent it in the 3 hours before, then classified the kind of work and what drove it. Agents need 20+ sessions in the time frame.";
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { stream(); agents(); }, 150); });
+</script>
+</body>
+</html>
