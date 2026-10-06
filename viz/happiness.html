@@ -7,13 +7,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="app.css?v=1791252173">
-<link rel="stylesheet" href="neu.css?v=1791252173">
+<link rel="stylesheet" href="app.css?v=1791252305">
+<link rel="stylesheet" href="neu.css?v=1791252305">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-<script src="data/dynamics.js?v=1791252173"></script>
-<script src="data/weekly.js?v=1791252173"></script>
-<script src="data/logos.js?v=1791252173"></script>
-<script src="common.js?v=1791252173"></script>
+<script src="data/dynamics.js?v=1791252305"></script>
+<script src="data/weekly.js?v=1791252305"></script>
+<script src="data/logos.js?v=1791252305"></script>
+<script src="common.js?v=1791252305"></script>
 <style>
 .slope { stroke-width: 2; fill: none; cursor: pointer; transition: opacity 0.15s; }
 .end { stroke: var(--night); stroke-width: 2; }
@@ -82,8 +82,9 @@ function draw() {
   const el = document.getElementById("chart");
   el.innerHTML = "";
   if (HP.length < 2) return;
-  const W = el.clientWidth, Hh = Math.max(520, Math.min(760, W * 0.75));
   const M = { t: 56, r: 210, b: 24, l: 70 };
+  // grow with the model count so every right-hand label gets its own 17px row
+  const W = el.clientWidth, Hh = Math.max(520, Math.min(760, W * 0.75), M.t + 17 * HP.length + M.b + 12);
   const ys = HP.flatMap(m => [m.follow.mood, m.lead.mood]);
   const y = d3.scaleLinear().domain(d3.extent(ys)).nice().range([Hh - M.b, M.t]);
   const xL = M.l, xR = W - M.r;
@@ -108,9 +109,14 @@ function draw() {
 
   // right labels with logos, de-collided
   const lab = [...HP].sort((a, b) => y(a.lead.mood) - y(b.lead.mood)).map(m => ({ m, y: y(m.lead.mood) }));
+  if (lab.length) lab[0].y = Math.max(lab[0].y, M.t);
   for (let i = 1; i < lab.length; i++) if (lab[i].y - lab[i - 1].y < 17) lab[i].y = lab[i - 1].y + 17;
-  const shift = Math.max(0, lab[lab.length - 1].y - (Hh - 6));
+  // if the stack still runs off the bottom, slide it up, but never above the column headers
+  const shift = Math.min(Math.max(0, lab[lab.length - 1].y - (Hh - 6)), Math.max(0, lab[0].y - M.t));
   lab.forEach(l => l.y -= shift);
+  // labels that still run past the bottom extend the drawing instead of overlapping
+  const needH = lab[lab.length - 1].y + 14;
+  if (needH > Hh) svg.attr("viewBox", `0 0 ${W} ${needH}`);
   lab.forEach(l => {
     const fo = g.append("foreignObject").attr("class", "nm").datum(l.m).attr("x", xR + 12).attr("y", l.y - 10).attr("width", M.r - 14).attr("height", 20);
     fo.append("xhtml:div").attr("style", "display:flex;gap:6px;align-items:center;font:500 12px var(--sans);color:var(--bone);white-space:nowrap;cursor:pointer")
