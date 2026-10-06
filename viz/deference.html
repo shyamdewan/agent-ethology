@@ -7,13 +7,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="app.css?v=1791153008">
-<link rel="stylesheet" href="neu.css?v=1791153008">
+<link rel="stylesheet" href="app.css?v=1791252173">
+<link rel="stylesheet" href="neu.css?v=1791252173">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-<script src="data/dynamics.js?v=1791153008"></script>
-<script src="data/weekly.js?v=1791153008"></script>
-<script src="data/logos.js?v=1791153008"></script>
-<script src="common.js?v=1791153008"></script>
+<script src="data/dynamics.js?v=1791252173"></script>
+<script src="data/weekly.js?v=1791252173"></script>
+<script src="data/logos.js?v=1791252173"></script>
+<script src="common.js?v=1791252173"></script>
 <style>
 .cell { cursor: pointer; }
 .cell:hover { stroke: var(--bone); stroke-width: 1.5; }
@@ -110,21 +110,37 @@ function findings() {
 
 function draw() {
   L = build(R, level);
-  const names = L.names;
+  let names = L.names;
   const el = document.getElementById("chart");
   el.innerHTML = "";
+  el.style.overflowX = "";
   if (names.length < 2) { el.innerHTML = `<p class="hint">Too few contests in this time frame to rank anyone.</p>`; return; }
+  // long time frames bring in dozens of models; keep the most active ones (in ranking order) so the matrix stays legible
+  const MAX_MODELS = 24;
+  let hidden = 0;
+  if (level !== "lab" && names.length > MAX_MODELS) {
+    const total = n => names.reduce((s, b) => s + (b === n ? 0 : L.wins[n][b] + L.wins[b][n]), 0);
+    const keep = new Set([...names].sort((a, b) => total(b) - total(a)).slice(0, MAX_MODELS));
+    hidden = names.length - keep.size;
+    names = names.filter(n => keep.has(n));
+  }
   const W = el.clientWidth;
   const ladderW = 130;
   const left = level === "lab" ? 120 : 150, top = level === "lab" ? 40 : 110;
-  const size = Math.min(level === "lab" ? 90 : 34, (W - left - ladderW - 20) / names.length);
+  const MIN_SIZE = 18;
+  const size = Math.max(MIN_SIZE, Math.min(level === "lab" ? 90 : 34, (W - left - ladderW - 20) / names.length));
   const Hh = top + size * names.length + 20;
-  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${Hh}`).attr("role", "img").attr("aria-label", "Win rate of each row over each column");
+  // never shrink squares below a readable size: scroll sideways instead
+  const needW = left + size * names.length + 24 + ladderW;
+  const fullW = Math.max(W, needW);
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${fullW} ${Hh}`).attr("role", "img").attr("aria-label", "Win rate of each row over each column");
+  if (needW > W) { el.style.overflowX = "auto"; svg.style("width", fullW + "px").style("height", Hh + "px").style("max-width", "none"); }
   const pos = i => left + i * size;
+  const rowFont = size < 24 ? 11 : 12;
 
   names.forEach((n, i) => {
-    const fo = svg.append("foreignObject").attr("x", 0).attr("y", top + i * size + size / 2 - 11).attr("width", left - 10).attr("height", 22);
-    fo.append("xhtml:div").attr("style", "display:flex;gap:7px;align-items:center;justify-content:flex-end;font:500 12px var(--sans);color:var(--bone);white-space:nowrap;overflow:hidden")
+    const fo = svg.append("foreignObject").attr("x", 0).attr("y", top + i * size).attr("width", left - 10).attr("height", size);
+    fo.append("xhtml:div").attr("style", `display:flex;gap:7px;align-items:center;justify-content:flex-end;height:100%;font:500 ${rowFont}px var(--sans);color:var(--bone);white-space:nowrap;overflow:hidden`)
       .html(`<span style="overflow:hidden;text-overflow:ellipsis">${esc(n)}</span>${logo(n)}`);
     const t = svg.append("text").attr("class", "collab");
     if (level === "lab") t.attr("x", pos(i) + size / 2).attr("y", top - 12).attr("text-anchor", "middle").text(n);
@@ -163,6 +179,7 @@ function draw() {
       .attr("width", Math.abs(sx(v) - sx(0))).attr("fill", labColor(n));
     lad.append("text").attr("x", lx + ladderW - 40).attr("y", cy + 4).text(signed(v, 1));
   });
+  if (hidden) el.insertAdjacentHTML("beforeend", `<p class="hint" style="margin-top:8px">Showing the ${names.length} models with the most contests in this time frame; ${hidden} quieter models are hidden. Pick a shorter time frame to see them.</p>`);
 }
 
 function detail(c) {

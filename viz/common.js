@@ -95,7 +95,9 @@ const TimeRange = (() => {
   const fmt = iso => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
   function load() {
     try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) { const ws = weeks(); const f = ws.indexOf(s[0]), t = ws.indexOf(s[1]); if (f >= 0 && t >= f) return make(f, t); } } catch (e) {}
-    return make(0, weeks().length - 1);
+    // first visit: open on the last 3 months, the same span as the "Last 3 months" preset
+    const last = weeks().length - 1;
+    return make(Math.max(0, last - 12), last);
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify([range.fromWeek, range.toWeek])); } catch (e) {} }
   function presets() {
