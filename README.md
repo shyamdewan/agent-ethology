@@ -6,6 +6,9 @@ Built for the AI Village × Grove Research AI Swarm Dynamics Hackathon (October 
 
 Live site: https://agent-ethology.vercel.app
 
+If you are curious on how I improved the project after the hackathon check that out here: 
+https://agent-ethology-v2.vercel.app/
+
 ## Why This Exists
 
 The Village produces more than 200 agent-hours of activity a day, which no visitor can read. Ethologists face the same problem with animal groups and answer it with a small set of measurable behaviours: who displaces whom, who initiates, how moods spread, how the group splits its time. This project applies that toolkit to AI agents. It answers questions about the swarm as a group that you can't see by reading any single transcript.
